@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Reversi</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/snap.svg/0.4.1/snap.svg-min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css?family=Righteous');
+
+    body {
+      margin: 0;
+      font-family: 'Righteous', cursive;
+      background: url(white-noise.png);
+
+      --dark-color:  #343434;
+      --light-color: #fefefe;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 33pt;
+      margin: .3ch 0;
+      text-shadow: 0 0 10px whitesmoke;
+    }
+
+    #container {
+      position: relative;
+    }
+
+    .player {
+      position: absolute;
+      font-size: 28pt;
+      width: auto;
+      height: auto;
+      border-bottom: 3px solid transparent;
+      transition: all 130ms ease-in;
+      padding: .8ch;
+      box-sizing: border-box;
+    }
+
+    .player .disc {
+      border: 1px solid #b0b0b0;
+      border-bottom-width: 8px;
+      border-right-width: 4px;
+      padding: 0 2px;
+      display: block;
+      box-sizing: content-box;
+      top: 0;
+      width: 4ch;
+      height: 4ch;
+      box-shadow: 0 0 5px rgba(0,0,0,.28);
+      border-radius: 1px;
+      text-align: center;
+      line-height: 4ch;
+      border-radius: 50%;
+      cursor: default;
+      margin: 0 auto;
+    }
+
+    .player .time {
+      font-size: 60%;
+      text-align: center;
+      line-height: 1.6em;
+      width: auto;
+      display: block;
+    }
+
+    .player.current .disc {
+      border-color: #47882E;
+    }
+
+    .player .trophy {
+      display: none;
+      width: 4ch;
+      margin: 0 auto;
+    }
+
+    .player {
+      box-shadow: 0 0 3px rgba(0,0,0,.08);
+      background-color: rgba(255,255,255,.255);
+    }
+
+    .player.winner .trophy {
+      display: block;
+    }
+
+    .player.current {
+      border-bottom-color: #47882E;
+    }
+
+    #player0 {
+      left: calc(50% - 4 * 50px - 6.6ch);
+    }
+
+    #player1 {
+      right: calc(50% - 4 * 50px - 6.6ch);
+    }
+
+    #player0 .disc {
+      color: var(--light-color);
+      background-color: var(--dark-color);
+    }
+
+    #player1 .disc {
+      color: var(--dark-color);
+      background-color: var(--light-color);
+    }
+
+    svg {
+      margin: auto;
+      display: block;
+      box-shadow: 2px 2px 0 #394938;
+      border: 1px solid #394938;
+      background: #47882E;
+      shape-rendering: optimizeQuality;
+      border-radius: 11px;
+      cursor: pointer;
+    }
+
+    svg circle:not(.ghost) {
+      stroke-width: 1px;
+    }
+
+    svg line {
+      stroke-width: 1px;
+      stroke: #394938;
+      shape-rendering: crispEdges;
+    }
+
+    #timer {
+      text-align: center;
+      font-size: 20px;
+      display: block;
+    }
+
+    @media (max-width: 850px) {
+      #player0, #player1 {
+        position: relative;
+        left: 0;
+        right: 0;
+        width: calc(50% - 1.5ch);
+        display: block;
+        float: left;
+        border-bottom-width: 4px;
+        font-size: 22pt;
+      }
+      #player0 {
+        margin: 1ch .5ch 1ch 1ch;
+      }
+
+      #player1 {
+        margin: 1ch 1ch 1ch .5ch;
+      }
+
+    }
+
+  </style>
+
+</head>
+<body>
+  <h1>Reversi</h1>
+  <span id="timer"></span>
+  <div id="container">
+    <div id="player0" class="player">
+      <span class="disc"></span>
+      <span class="time"></span>
+      <img class="trophy" src="trophy.gif">
+    </div>
+    <div id="player1" class="player">
+      <span class="disc"></span>
+      <span class="time"></span>
+      <img class="trophy" src="trophy.gif">
+    </div>
+  </div>
+  <script>
+    document.oncontextmenu = () => false;
+
+    (() => {
+      const CELL_SIZE         = 50;
+      const DISC_SIZE         = .84 * CELL_SIZE;
+      const anims = {
+        discFlipInterval: 130,
+        discFlipDuration: 260,
+        discPlacementDuration: 300,
+        ghostDiscShowDelay: 100,
+        ghostDiscShowInterval: 44,
+        ghostDiscShowDuration: 280,
+      };
+
+      const DISC_COLORS = ["#343434", "#fefefe"];
+      const GHOST_DISC_OPACITY = .65;
+
+      let paper = Snap(8 * CELL_SIZE, 8 * CELL_SIZE);
+      let pt = paper.node.createSVGPoint();
+      let playerElems = [player0, player1];
+
+      let discs = [], labels, board = new Uint8Array(64);
+      let currentPlayer; // true: light; false: dark
+
+      const stat = { };
+      let boardLocked = 0;
+
+      function createGhostPattern(color) {
+        return paper.path("M10-5-10,15M15,0,0,15M0-5-20,15").attr({
+              "fill": "none",
+              "stroke": color,
+              "strokeWidth": 4
+          }).pattern(0, 0, 10, 10)
+      }
+
+      var ghostDiscPattern = [createGhostPattern("#363739"), createGhostPattern("#f2f1f3")];
+
+      var shadows = [paper.filter(Snap.filter.shadow(1, 1, 0, DISC_COLORS[1])), paper.filter(Snap.filter.shadow(1, 1, 0, DISC_COLORS[0]))]
+
+      const BOARD_CELL_EMPTY = 0;
+      const BOARD_CELL_DARK  = 1;
+      const BOARD_CELL_LIGHT = 2;
+      const BOARD_CELLM_DISC = 3;
+      const BOARD_CELL_GHOST = 4;
+
+      function clickHandler(event) {
+        pt.x = event.clientX;
+        pt.y = event.clientY;
+
+        const tr = pt.matrixTransform(paper.node.getScreenCTM().inverse());
+
+        const x = ~~(tr.x / CELL_SIZE),
+              y = ~~(tr.y / CELL_SIZE);
+
+        placeDisc(x, y)
+
+      }
+
+      for (let i = 1, s = 8 * CELL_SIZE;i < 8;++i) {
+        paper.line(0, i * CELL_SIZE,
+                 s, i * CELL_SIZE, 2);
+
+        paper.line(i * CELL_SIZE, 0,
+                 i * CELL_SIZE, s);
+      }
+
+      for (let y = .5;y < 8;++y)
+      for (let x = .5;x < 8;++x) {
+        discs.push(
+          paper.circle(x * CELL_SIZE, y * CELL_SIZE, DISC_SIZE / 2)
+             .attr({ "visibility": "hidden" })
+        );
+      }
+
+      function beginGame() {
+
+        board.fill(BOARD_CELL_EMPTY);
+
+        stat.empty  = 64;
+        stat.dark   = 0;
+        stat.light  = 0;
+        stat.placed = 0;
+
+        currentPlayer = false;
+
+        for (let disc of discs) {
+          disc.attr({ "visibility": "hidden" });
+        }
+
+        statChanged();
+        currentPlayerChanged();
+        startTimer();
+
+        paper.click(clickHandler);
+
+      }
+
+      let timeoutId, gameStart = Date.now();
+      let thinkingTime = [0, 0];
+      let thinkingTimeStart;
+
+      function startTimer() {
+
+        function formatTime(time) {
+
+          let sec = Math.round(time / 1000);
+          let min = ~~(sec / 60);
+
+          sec = sec % 60;
+
+          if (min < 10) min = "0" + min;
+          if (sec < 10) sec = "0" + sec;
+
+          return "".concat(min, ":", sec);
+        }
+
+        function updateTime() {
+          const now = Date.now();
+
+          timer.textContent = formatTime(now - gameStart);
+
+          playerElems[+currentPlayer].querySelector(".time").textContent = formatTime(thinkingTime[+currentPlayer] + now - thinkingTimeStart);
+          playerElems[+!currentPlayer].querySelector(".time").textContent = formatTime(thinkingTime[+!currentPlayer]);
+
+        }
+
+        timeoutId = setInterval(updateTime, 1000);
+
+        updateTime();
+      }
+
+      function stopTimer() {
+        clearInterval(timeoutId);
+      }
+
+      function canPlaceDisc(x, y) {
+
+        switch (board[pt2x(x, y)]) {
+          case BOARD_CELL_LIGHT:
+          case BOARD_CELL_DARK:
+            return false;
+        }
+
+        return stat.placed < 4
+          ? (3 === x || 4 === x) && (3 === y || 4 === y)
+          : getLineDiscs(x, y).length > 0;
+
+      }
+
+      function getLineDiscs(bx, by) {
+        let r = [];
+
+        const playerDisc      =  currentPlayer ? BOARD_CELL_LIGHT : BOARD_CELL_DARK;
+        const otherPlayerDisc = !currentPlayer ? BOARD_CELL_LIGHT : BOARD_CELL_DARK;
+
+        function find(dx, dy) {
+
+          let x = bx, y = by, idx;
+          let line = [];
+          let cell;
+
+          while (true) {
+            x += dx;
+            y += dy;
+
+            if (x < 0 || x >= 8 ||
+                y < 0 || y >= 8)
+                return;
+
+            idx = pt2x(x, y);
+
+            cell = board[idx];
+            if (otherPlayerDisc !== cell)
+              break;
+
+            line.push({
+              x: x,
+              y: y,
+              idx: idx,
+              disc: discs[idx]
+            });
+
+          };
+
+          if (playerDisc === cell) {
+            r = r.concat(line);
+          }
+
+        }
+
+        for (let i = 0;i < 9;i++) {
+          if (4 === i) continue;
+          const [dx, dy] = [~~(i / 3) - 1, i % 3 - 1];
+          find(dx, dy);
+        }
+
+        return r;
+
+      }
+
+      function pt2x(x, y) {
+        return y * 8 + x;
+      }
+
+      function statChanged() {
+        playerElems[0].querySelector(".disc").textContent = stat.dark;
+        playerElems[1].querySelector(".disc").textContent = stat.light;
+      }
+
+      document.onkeydown = e => {
+        if (13 === e.which) {
+          const {x, y} = getNextSteps().map(e => (e.c = getLineDiscs(e.x, e.y), e)).sort((a, b) => a.c - b.c || Math.random() - .5)[0]
+          placeDisc(x, y);
+        }
+      }
+
+      function placeDisc(x, y) {
+
+        if (boardLocked > 0 || !canPlaceDisc(x, y)) {
+          return;
+        }
+
+        const idx = pt2x(x, y);
+        board[idx] = currentPlayer ? (++stat.light, BOARD_CELL_LIGHT) : (++stat.dark, BOARD_CELL_DARK);
+        ++stat.placed;
+        --stat.empty;
+        statChanged();
+
+        discs[idx]
+          .attr({ "fill": DISC_COLORS[+currentPlayer],
+              "opacity": 1,
+              "r": DISC_SIZE / 2 * .9,
+              "visibility": "visible",
+              "stroke": DISC_COLORS[+!currentPlayer],
+              "filter": shadows[+currentPlayer] })
+          .removeClass("ghost")
+          .animate({ "r": DISC_SIZE / 2 }, anims.discPlacementDuration, mina.bounce);
+
+        removeGhostDiscs();
+
+        let c = 0;
+        let t = getLineDiscs(x, y);
+
+        if (t.length) {
+          for (let e of t) {
+            ++boardLocked;
+            console.assert((board[e.idx] & BOARD_CELLM_DISC) === (!currentPlayer ? BOARD_CELL_LIGHT : BOARD_CELL_DARK));
+            board[e.idx] = currentPlayer ? BOARD_CELL_LIGHT : BOARD_CELL_DARK;
+
+            const distance = Math.max(Math.abs(e.x - x), Math.abs(e.y - y));
+
+            /* flip disc */
+            setTimeout((disc) => {
+              disc
+                .animate({ "fill": DISC_COLORS[+currentPlayer],
+                       "stroke": DISC_COLORS[+!currentPlayer],
+                       "opacity": 1 },
+                    anims.discFlipDuration, mina.linear,
+                    function() {
+                      if (currentPlayer) ++stat.light, --stat.dark; else ++stat.dark, --stat.light;
+                      statChanged();
+
+                      this.attr({ "filter": shadows[+currentPlayer] })
+
+                      if (!--boardLocked) {
+                        otherPlayer();
+                      }
+                    });
+            }, distance * anims.discFlipInterval, e.disc);
+
+          }
+
+        } else {
+          otherPlayer();
+        }
+
+
+
+      }
+
+      function otherPlayer() {
+        currentPlayer = !currentPlayer;
+        currentPlayerChanged();
+      }
+
+      function endGame() {
+
+        paper.unclick(clickHandler);
+
+        stopTimer();
+        console.warn(stat.dark + " " + stat.light);
+
+        if (stat.dark !== stat.light) {
+
+          playerElems[+(stat.light > stat.dark)].classList.add("winner");
+          new Audio("happy-trumpet.mp3").play();
+
+          /*const loser = stat.dark > stat.light ? BOARD_CELL_LIGHT : BOARD_CELL_DARK;
+
+          Array.apply(0, Array(64))
+            .map((e, i) => i)
+            .filter((i) => loser === board[i])
+            .sort((a, b) => Math.random() - .5)
+            .forEach((i, j) => {
+              console.log(i, j);
+              setTimeout((disc) => {
+                disc.animate({ "r": 0 }, 100, mina.bounce);
+              }, 4000 + (j + Math.random()) * 1500, discs[i]);
+            })*/
+
+        } else {
+          playerElems[0].classList.add("winner");
+          playerElems[1].classList.add("winner");
+        }
+      }
+
+      function currentPlayerChanged() {
+        updateGhostDiscs();
+
+        const now = Date.now();
+        if (thinkingTimeStart) {
+          thinkingTime[+!currentPlayer] += now - thinkingTimeStart;
+        }
+        thinkingTimeStart = now;
+
+        playerElems[+!currentPlayer].classList.remove("current");
+        playerElems[+currentPlayer].classList.add("current");
+
+        if (![...getNextSteps()].length) {
+          if (currentPlayerChanged.caller.caller !== currentPlayerChanged) {
+            otherPlayer();
+          } else {
+            endGame();
+          }
+        }
+      }
+
+      function removeGhostDiscs() {
+
+        for (let y = 0;y < 8;++y)
+        for (let x = 0;x < 8;++x) {
+
+          const idx = pt2x(x, y);
+          let cell = board[idx];
+          if (BOARD_CELL_GHOST & cell) {
+            board[idx] = cell = BOARD_CELL_EMPTY;
+
+            discs[idx]
+              .attr({
+                "visibility": "hidden",
+                "opacity": 0
+              })
+              .removeClass("ghost");
+
+          }
+
+        }
+
+      }
+
+      function getNextSteps() {
+
+        let r = [];
+
+        for (let y = 0;y < 8;++y)
+        for (let x = 0;x < 8;++x) {
+          const idx = pt2x(x, y);
+          if (canPlaceDisc(x, y))  {
+            r.push({
+              disc: discs[idx],
+              idx: idx,
+              x: x,
+              y: y
+            });
+
+          }
+        }
+
+        return r;
+
+      }
+
+      function updateGhostDiscs() {
+        let i = 0;
+
+        for (let e of getNextSteps().map(e => (e.c = getLineDiscs(e.x, e.y), e)).sort((a, b) => a.c - b.c || Math.random() - .5)) {
+
+          board[e.idx] = BOARD_CELL_GHOST | (currentPlayer ? BOARD_CELL_LIGHT : BOARD_CELL_DARK);
+
+          ++boardLocked;
+
+          setTimeout((disc, currentPlayer) => {
+            disc.attr({
+                "visibility": "visible",
+                "fill": ghostDiscPattern[+currentPlayer],
+                "opacity": 0
+              })
+              .addClass("ghost")
+              .animate({ "opacity": GHOST_DISC_OPACITY }, anims.ghostDiscShowDuration, mina.easein, () => --boardLocked);
+          }, anims.ghostDiscShowDelay + i++ * anims.ghostDiscShowInterval, e.disc, currentPlayer);
+
+        }
+      }
+
+      container.appendChild(paper.node);
+
+      beginGame();
+
+    })();
+  </script>
+
+</body>
+</html>
+<!-- vim:set ts=2 sw=2: -->
