@@ -172,8 +172,41 @@
       <img class="trophy" src="trophy.gif">
     </div>
   </div>
+
+  <script src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js"></script>
+
+
+ <script src="//iris.magicusers.com/atheos/afrodite.js"></script>
+<link rel="stylesheet" href="//iris.magicusers.com/atheos/afrodite.css"> 
+
+<style>
+.Aφρός_Αφροδίτη_window_root > article > header > h1::before
+{
+	content: "Online Reversi";	
+}
+
+.Aφρός_Αφροδίτη_window_BannerPane
+{
+	bottom: 0;
+}
+</style>
+
+
+<script>
+	"use strict";
+
+	var gamecontrol = new Aθεος.Αφροδίτη.TurnBasedGameControl({
+		NumberOfPlayers:2,
+		OnGameStart:function()
+		{
+			gamecontrol.startgame();
+		}
+	});
+
+</script>
+
   <script>
-    document.oncontextmenu = () => false;
+    //document.oncontextmenu = () => false;
 
     (() => {
       const CELL_SIZE         = 50;
@@ -387,9 +420,43 @@
           const {x, y} = getNextSteps().map(e => (e.c = getLineDiscs(e.x, e.y), e)).sort((a, b) => a.c - b.c || Math.random() - .5)[0]
           placeDisc(x, y);
         }
-      }
+	  }
+	  
+	  function placeDisc(x,y)
+	  {
+		if (gamecontrol.HasQuorum() && gamecontrol.IsCurrentPlayer())
+		{
+			patched_placeDisc(x,y);
+		}	  
+	  }
 
-      function placeDisc(x, y) {
+		var patched_placeDisc = gamecontrol.Server.PatchRaw(function(){
+			var queue=[];
+
+			return function (msg, x, y)
+			{
+				function doit()
+				{
+					if (boardLocked > 0)
+						setTimeout(doit, 10);
+					else
+					{
+						if (gamecontrol.HasQuorum())
+						{
+							var e = queue[0];
+							queue.splice(0,1);
+							original_placeDisc.apply(this, e);
+						}
+					}
+				}
+
+				queue.push([x, y, msg.inplaybackmode]);
+				doit();
+			}
+		}()
+		);
+
+      function original_placeDisc(x, y, fSkipAnimation) {
 
         if (boardLocked > 0 || !canPlaceDisc(x, y)) {
           return;
@@ -430,7 +497,7 @@
                 .animate({ "fill": DISC_COLORS[+currentPlayer],
                        "stroke": DISC_COLORS[+!currentPlayer],
                        "opacity": 1 },
-                    anims.discFlipDuration, mina.linear,
+					   fSkipAnimation?0: anims.discFlipDuration, mina.linear,
                     function() {
                       if (currentPlayer) ++stat.light, --stat.dark; else ++stat.dark, --stat.light;
                       statChanged();
@@ -438,24 +505,27 @@
                       this.attr({ "filter": shadows[+currentPlayer] })
 
                       if (!--boardLocked) {
-                        otherPlayer();
+                        otherPlayer(fSkipAnimation);
                       }
                     });
-            }, distance * anims.discFlipInterval, e.disc);
+            }, fSkipAnimation?0: distance * anims.discFlipInterval, e.disc);
 
           }
 
         } else {
-          otherPlayer();
+          otherPlayer(fSkipAnimation);
         }
 
 
 
       }
 
-      function otherPlayer() {
+
+
+      function otherPlayer(fSkipAnimation) {
         currentPlayer = !currentPlayer;
-        currentPlayerChanged();
+		currentPlayerChanged(fSkipAnimation);
+		gamecontrol.TakeTurn();
       }
 
       function endGame() {
@@ -489,8 +559,8 @@
         }
       }
 
-      function currentPlayerChanged() {
-        updateGhostDiscs();
+      function currentPlayerChanged(fSkipAnimation) {
+        updateGhostDiscs(fSkipAnimation);
 
         const now = Date.now();
         if (thinkingTimeStart) {
@@ -555,7 +625,7 @@
 
       }
 
-      function updateGhostDiscs() {
+      function updateGhostDiscs(fSkipAnimation) {
         let i = 0;
 
         for (let e of getNextSteps().map(e => (e.c = getLineDiscs(e.x, e.y), e)).sort((a, b) => a.c - b.c || Math.random() - .5)) {
@@ -564,6 +634,7 @@
 
           ++boardLocked;
 
+		  const timeoutinterval = fSkipAnimation?0: anims.ghostDiscShowDelay + i++ * anims.ghostDiscShowInterval;
           setTimeout((disc, currentPlayer) => {
             disc.attr({
                 "visibility": "visible",
@@ -571,15 +642,15 @@
                 "opacity": 0
               })
               .addClass("ghost")
-              .animate({ "opacity": GHOST_DISC_OPACITY }, anims.ghostDiscShowDuration, mina.easein, () => --boardLocked);
-          }, anims.ghostDiscShowDelay + i++ * anims.ghostDiscShowInterval, e.disc, currentPlayer);
+              .animate({ "opacity": GHOST_DISC_OPACITY }, fSkipAnimation?0:anims.ghostDiscShowDuration, mina.easein, () => --boardLocked);
+          }, timeoutinterval, e.disc, currentPlayer);
 
         }
       }
 
       container.appendChild(paper.node);
 
-      beginGame();
+    	gamecontrol.startgame=beginGame;
 
     })();
   </script>
