@@ -172,43 +172,41 @@
       <img class="trophy" src="trophy.gif">
     </div>
   </div>
+  <div id="idMagicUsersContainer" title="Tap for more online juice"></div>
 
   <script src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js"></script>
 
 
  <script src="//iris.magicusers.com/atheos/afrodite.js"></script>
-<link rel="stylesheet" href="//iris.magicusers.com/atheos/afrodite.css"> 
+<link rel="stylesheet" href="//iris.magicusers.com/atheos/themes/app.light.css"> 
+
 
 <style>
-.Aφρός_Αφροδίτη_window_root > article > header > h1::before
-{
-	content: "Online Reversi";	
-}
+		#idMagicUsersContainer {
+			position: fixed;
+			bottom: 0;
+			height:1.1618em;
+			width:100%;
+		}
 
-.Aφρός_Αφροδίτη_window_BannerPane
-{
-	bottom: 0;
-}
 </style>
 
 
 <script>
-	"use strict";
-
+	Aθεος.Αφροδίτη.OnReady().then(()=>{
 	var gamecontrol = new Aθεος.Αφροδίτη.TurnBasedGameControl({
-		NumberOfPlayers:2,
-		OnGameStart:function()
+		Title:"Reversi"
+		,Container:document.getElementById("idMagicUsersContainer")
+		,NumberOfPlayers:2
+		,OnGameStart:function()
 		{
 			gamecontrol.startgame();
 		}
 	});
 
-</script>
 
-  <script>
     //document.oncontextmenu = () => false;
 
-    (() => {
       const CELL_SIZE         = 50;
       const DISC_SIZE         = .84 * CELL_SIZE;
       const anims = {
@@ -652,7 +650,7 @@
 
     	gamecontrol.startgame=beginGame;
 
-    })();
+    });
   </script>
 
 </body>
